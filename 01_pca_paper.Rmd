@@ -1,0 +1,216 @@
+---
+title: "PCA for Fluid analysis data"
+output:
+  html_document:
+    df_print: paged
+---
+
+Based on Paper that published: https://iopscience.iop.org/article/10.1088/1757-899X/598/1/012088/meta
+
+# Load Library
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(openxlsx)
+library(factoextra)
+library(hrbrthemes)
+library(ggfortify)
+library(corrplot)
+library(ggcorrplot)
+library(ggbiplot)
+library(RColorBrewer)
+```
+
+# Open & wrangling dataset
+
+Dataset are from fluid sample analysis of Heavy dump truck 100-mton class for Transmission component data.
+
+```{r}
+read.xlsx("raw_data/777_Trans.xlsx", sheet = "Trans") %>%
+  glimpse() -> raw_data
+
+raw_data %>%
+  select(
+    unitno,
+    Si:B,
+    V100, PQ,
+    PC06:ISO.14,
+    oilchanged2:filterchanged2,
+    Filter.Cut:Magnetic,
+    life_hrs:RUL
+  ) -> df_trans
+
+glimpse(df_trans)
+```
+After filtering for Variables that needed for PCA Processing and save in object name as *df_trans* then we calculate the missing data in the dataset
+
+```{r missing data}
+df_trans %>%
+  summarise_all(~sum(is.na(.))) %>%
+  glimpse()
+
+```
+
+So, we select the completed data from the missing data
+```{r completed cases}
+df_trans %>%
+  drop_na() %>%
+  mutate(
+    oilchanged2 = factor(oilchanged2, levels = c(1,0)),
+    filterchanged2 = factor(filterchanged2, levels = c(1,0)),
+    Filter.Cut = factor(Filter.Cut, levels = c("A","B","C","X"), labels = c(1,2,3,4)),
+    Magnetic = factor(Magnetic, levels = c("A","B","C","X"), labels = c(1,2,3,4))
+  ) %>% glimpse() -> df_fix
+
+df_fix
+
+
+```
+
+Oil Changed, Filter Changed, Filter Cut and Magnetic are Factorial variable and wee need modify the structure. and then we checked for the correlation
+
+```{r correlation matrix}
+
+df_fix %>%
+  select(-c(unitno)) %>%
+  mutate(
+    oilchanged2 = as.numeric(oilchanged2),
+    filterchanged2 = as.numeric(filterchanged2),
+    Filter.Cut = as.numeric(Filter.Cut),
+    Magnetic = as.numeric(Magnetic),
+  ) %>%
+  cor() %>%
+  corrplot(method = "color",
+           type = "lower",
+           tl.col = "black", tl.srt = 1,
+           addCoef.col = "black",
+           number.cex = 0.55,
+           col=brewer.pal(n = 10, name="RdYlBu"),
+           mar=c(.25,0,.25,.25))
+
+```
+
+
+
+when we drop the missing data, we can normalized the data before processing into PCA. Normalization or Scaling data in R can be using with *scale* function that built in R which is Z-score normalization.
+
+```{r z-score}
+
+  df_fix %>%
+  select(-c(unitno, oilchanged2:RUL)) %>%
+  as_tibble() %>%
+  scale(center = TRUE, scale = TRUE)
+  
+```
+```{r minmax}
+norm_minmax <- function(x){
+                           (x- min(x)) /(max(x)-min(x))
+}
+
+df_fix %>%
+  select(-c(unitno, oilchanged2:RUL)) %>%
+  as_tibble() %>%
+  norm_minmax()
+```
+
+PCA analysis with *prcomp()* package in R
+
+```{r prcomp}
+
+df_fix %>%
+  select(-c(unitno, life_hrs:RUL)) %>%
+  mutate(
+    oilchanged2 = as.numeric(oilchanged2),
+    filterchanged2 = as.numeric(filterchanged2),
+    Filter.Cut = as.numeric(Filter.Cut),
+    Magnetic = as.numeric(Magnetic),
+  ) %>%
+  prcomp(scale. = TRUE, center = TRUE) -> pca_trans
+
+pca_trans
+
+```
+Create a screeplot to find how much *n*
+
+```{r screeplot}
+pca_trans %>%
+  screeplot(type = "line", npcs = 20, ylim = c(0,5)) +
+  abline(h = 1, lty = 3, col = "red") # based on scree plot pca n = 6
+```
+```{r summary PCA}
+summary(pca_trans)
+```
+
+Plotting of Individual PC is representative percentage for variables in dataset.
+
+```{r}
+pca_trans %>%
+  fviz_eig(addlabels = TRUE, ncp = 20,
+           barfill = "springgreen3",
+           ggtheme = theme_ipsum_rc(
+             ticks = TRUE,
+             grid = FALSE
+           ))
+```
+
+```{r biplot}
+pca_trans %>%
+  biplot(scale = 0, cex = .75)
+
+```
+
+Another thing you can do to easily see the grouping of different variables is a biplot. With this plot could be found that It’s important to know what your components are made up of. In other words, which variables contribute to any given component.
+
+
+```{r biplot advance}
+pca_trans %>%
+  autoplot(data = df_fix, colour = 'life_hrs',
+           loadings = TRUE, loadings.label = TRUE, loadings.colour = "purple", loadings.label.size = 3, scale = 1,
+           loadings.label.vjust = 1.5) +
+  scale_color_gradient(low="springgreen", high="firebrick2") +
+  theme_ipsum_rc(
+    base_size = 10,
+    plot_title_size = 12,
+    subtitle_size = 10,
+    strip_text_face = "bold",
+    grid = TRUE,
+    ticks = FALSE
+  )
+```
+
+```{r}
+print(pca_trans$rotation)
+```
+If we want to analysis top-12 PC in dataset.
+
+```{r}
+print(pca_trans$rotation[,1:12])
+```
+
+
+```{r}
+pca_trans %>%
+  ggbiplot(
+    obs.scale = 1,
+    var.scale = 1,
+    groups = df_fix$life_hrs,
+    ellipse = TRUE,
+    circle = TRUE,
+    ellipse.prob = 0.68
+  ) + 
+  # scale_color_discrete(name = '') +
+  scale_color_gradient(low="springgreen", high="firebrick2", name = "Life Hours") +
+  theme_ipsum_rc(
+    base_size = 10,
+    plot_title_size = 12,
+    subtitle_size = 10,
+    strip_text_face = "bold",
+    grid = FALSE,
+    ticks = TRUE
+  ) +
+  theme(
+    legend.direction = 'horizontal',
+    legend.position = 'top'
+  )
+```
+

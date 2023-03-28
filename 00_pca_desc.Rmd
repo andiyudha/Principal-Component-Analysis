@@ -1,0 +1,1325 @@
+---
+title: "R Notebook for DQLAB.id"
+output: html_notebook
+---
+
+Modification of course material in : https://academy.dqlab.id/main/livecode/89/172/825?pr=0
+
+Pada modul Machine Learning for Finance: Credit Risk Prediction kita mempelajari penerapan algoritma decision tree C5.0 untuk memprediksi credit scoring/ rating suatu nasabah berdasarkan variabel-variabel seperti pendapatan, tenor pinjaman dan banyaknya tanggungan.
+
+```{r PCA, echo=FALSE, out.width = "75%", fig.align = "center"}
+
+knitr::include_graphics("PCA.jpeg")
+
+```
+
+Berikut ini adalah contoh variabel-variabel yang umumnya digunakan untuk credit scoring:
+
+
+*Demografi aplikan*
+
+jenis kelamin
+usia
+pendidikan tertinggi
+pekerjaan
+lama bekerja pada pekerjaan terakhir
+
+*Disposable income*
+
+pendapatan
+besarnya pinjaman
+tenor pinjaman
+banyaknya tanggungan
+
+*Credit history*
+
+besarnya pinjaman
+usia rata-rata keterlambatan pembayaran (overdue)
+nominal pembayaran per periode
+
+*Aset*
+
+status kepemilikan tempat tinggal
+aset lain yang dimiliki
+
+Dataset untuk rating kredit pada umumnya memiliki banyak sekali variabel. Harapan dari mencatat data dengan banyak variabel ini adalah membuat model yang bisa membuat klasifikasi credit rating yang akurat. Namun besarnya jumlah variabel ini juga menimbulkan persoalan tersendiri, yaitu banyaknya redundant variabel, kesulitan melakukan visualisasi, kesulitan menjelaskan model dan besarnya storage yang diperlukan. Di sinilah teknik statistika **Principal Component Analysis** dapat berperan, yaitu sebagai unsupervised algorithm untuk mengurangi banyaknya variabel (dimension reduction) untuk digunakan sebagai input untuk algoritma lain tanpa banyak mengurangi kualitas dari prediksi rating.
+
+Sebagian besar algoritma machine learning terbagi menjadi 2 bagian, yaitu supervised learning dan unsupervised learning. Supervised learning bertujuan untuk mencari fungsi yang memetakan nilai atribut suatu instance ke nilai atribut targetnya. Beberapa contoh dari SL adalah algoritma decision tree C5.0 (modul Machine Learning for Finance: Credit Risk Prediction), analisa regresi linier. Unsupervised learning bertujuan mencari pola dalam data tanpa bantuan atribut target. Salah satu contoh dari UL adalah algoritma k-means (modul Machine Learning for Marketing) digunakan untuk segmentasi pelanggan.
+
+
+#Overview Principal Component Analysis
+
+**Principal Component Analysis (PCA)** adalah salah satu metode reduksi dimensi pada machine learning. PCA akan memilih “variabel-variabel” yang mampu menjelaskan sebagian besar variabilitas data. Bila anda familiar dengan analisis statistika Regresi, konsep variabilitas ini mirip dengan koefisien determinasi R2.
+PCA mengurangi dimensi dengan membentuk variabel-variabel baru yang disebut Principal Components yang merupakan kombinasi linier dari variabel-variabel lama. Misalnya sebuah data set memiliki 3 variabel, x1, x2 dan x3. Sebuah principal component merupakan rata-rata tertimbang seperti berikut ini:
+
+```{r persamaan, echo=FALSE}
+knitr::include_graphics("download_pca2.jpg")
+
+```
+
+
+Yang dimaksud linier pada konteks ini adalah linier dalam variabel.
+
+Pada contoh PC1 = 0.674x1 + 0.664x2 + 0.330x3, variabel x1, x2, x3 masing-masing berpangkat 1.
+Pada contoh PC3 = 0.5x12 + 0.664√x2 + log20.330x3, variabel x1, x2 dan x3 tidak berpangkat 1.
+
+Principal Component ini dipilih dengan syarat-syarat sebagai berikut:
+
+- setiap Principal Component memberikan varians terbesar,
+- setiap Principal Component tidak memiliki korelasi dengan PC lain dan
+- panjang vektor yang memuat koefisien-koefisien PC ini adalah 1.
+
+Pada gambar pertama menunjukkan variabilitas data lebih tinggi pada arah Principal Component pertama (garis biru) dibandingkan dengan arah Principal Component kedua (garis merah). Pada gambar kedua data lebih banyak bervariasi searah dengan sumbu X dibandingkan dengan arah sumbu Y. Variabilitas pada data dapat diaproksimasi hanya dengan menggunakan Princicipal Component 1 yang terletak sejajar dengan sumbu X.
+
+
+```{r pca, echo=FALSE}
+knitr::include_graphics("download_pca3.png")
+
+```
+
+
+Analogi principal component mirip dengan tusuk sate. Pada gambar pertama kita akan meletakkan tusuk sate pertama (warna biru) untuk menusuk sebanyak mungkin potongan daging yang berserakan. Sebagian daging yang belum tertusuk oleh tusuk sate pertama, akan ditusuk oleh tusuk sate kedua (warna merah). Pada gambar kedua sebagian besar potongan daging mengarah sejajar dengan sumbu X, sehingga hanya diperlukan satu tusuk sate saja (warna biru).
+
+Konsep dasar dari PCA adalah melakukan aproksimasi dengan mencari variabel-variabel yang memberikan variabilitas terbesar pada data lalu meletakkan “sumbu-sumbu” principal component agar hubungan antar variabel (korelasi antar variabel) menjadi minimal. Penghitungan Varians dan Principal Component ini dapat dilakukan dengan menggunakan konsep nilai eigen (eigenvalue) dan vektor eigen (eigenvector) dari ilmu Aljabar Linier. Nilai-nilai eigen menunjukkan kontribusi suatu principal component terhadap varians data. Vektor-vektor eigen memberikan koefisien-koefisien Principal Components. Banyaknya Principal Components yang akan dipilih disesuaikan dengan batasan yang diinginkan atau dengan menggunakan Screeplot. Cara menghitung nilai eigen dan cara memperoleh vektor-vektor eigen dibahas pada bab reviu Aljabar Linier.
+
+
+# Asumsi
+
+Asumsi-asumsi yang harus dipenuhi agar teknik Principal Component Analysis dapat berjalan dengan baik:
+
+- Tipe variabel adalah numerik.
+- Variabel-variabel yang menjadi input PCA adalah variabel prediktor.
+- Variabel-variabel prediktor memiliki hubungan linier.
+- Semua variabel harus distandarisasi (centered dan scaled).
+
+
+# Langkah-Langkah Principal Component Analysis
+
+Berikut ini adalah langkah-langkah yang diperlukan untuk melakukan Principal Component Analysis:
+
+1. Menyiapkan data (standardisasi data),
+2. Menghitung matrik kovarians atau matrik korelasi,
+3. Menghitung nilai eigen dan vektor eigen dari matrik korelasi,
+4. Memilih principal component,
+5. Visualisasi output,
+6. Menghitung skor baru.
+
+Cara kerja teknik Principal Component Analysis adalah memilih principal component yang memberikan varians terbesar. Cara kerja metode PCA menyebabkan metode ini sangat sensitif terhadap nilai variabel yang berbeda-beda atau terhadap skala variabel yang berbeda. Agar PCA tidak salah “memilih” variabel, maka variabel-variabel input perlu distandarisasi. Standarisasi variabel dilakukan dengan cara mengurangi setiap observasi pada variabel tersebut dengan mean variabel dan membagi dengan simpangan baku variabel.
+
+```{r, echo=FALSE}
+knitr::include_graphics("download_pca4.jpg")
+```
+
+Koefisien korelasi menunjukkan kuatnya hubungan linier antara 2 buah variabel. Hubungan antar 2 variabel untuk semua variabel prediktor dalam data dapat dilihat pada matrik korelasi. Koefisien korelasi yang tinggi (mendekati 1 untuk hubungan linier yang searah atau mendekati -1 untuk hubungan linier yang berlawanan arah) merupakan indikasi redundancy. Di sinilah teknik PCA dapat digunakan untuk mengurangi dimensi dengan cara memilih “variabel-variabel” baru yang tidak saling berkorelasi yang mampu menjelaskan sebagian besar variabilitas data.
+
+Dari matrik korelasi didapatkan informasi mengenai kekuatan hubungan linier antara variabel. Tujuan kita melakukan PCA adalah memilih variabel-variabel yang memberikan varians terbesar dengan cara meminimalkan distorsi antara variabel. Hal ini dilakukan dengan cara menghitung nilai eigen dan vektor eigen dari matrik korelasi. “Variabel baru” principal component didapatkan dari vektor eigen dan merupakan kombinasi linier dari variabel lama. Koefisien-koefisien tersebut menunjukkan besarnya bobot variabel-variabel lama dalam masing-masing principal component.
+
+Berapa banyaknya principal component yang dipilih? Ada beberapa kriteria yang dapat digunakan untuk menentukan k:
+
+1. Batasan variabilitas, misalnya 80%.
+2. Kriterion Kaiser: memilih semua PC yang nilai eigennya yang lebih besar dari 1.
+3. Memilih k Principal Component.
+
+Dalam modul ini kita akan memilih p Principal Component pertama yang nilai eigennya lebih dari 1 sampai dengan batasan variabilitas tertentu. Mengapa nilai eigen yang dipilih adalah nilai eigen yang lebih dari 1? Sebuah PC yang nilai eigennya lebih dari 1 mampu menjelaskan variabilitas data yang lebih besar daripada variabel-variabel asal.
+
+Besarnya kontribusi sebuah principal component terhadap variabilitas data dapat dihitung dengan rumus
+
+```{r, echo=FALSE}
+knitr::include_graphics("download_pca5.jpg")
+```
+
+di mana λj adalah nilai eigen ke j dan p adalah total banyaknya variabel.
+
+Visualisasi output PCA dapat dilakukan dengan menggunakan biplot. Plot ini menampilkan skor dan loading dalam grafik yang sama dengan menggunakan 2 Principal Component yang paling penting. Sumbu horizontal menampilkan PC pertama, sumbu vertikal menampilkan PC kedua. Variabel-variabel yang memiliki kontribusi besar terhadap PC1 akan digambarkan mendatar dan variabel-variable yang memiliki kontribusi tinggi terhadap PC2 akan digambarkan pada arah vertikal.
+
+Skor variabel lama akan ditransformasi menjadi skor variabel baru dengan menggunakan rumus
+
+```{r, echo=FALSE}
+knitr::include_graphics("download_pca6.jpg")
+```
+
+# Package yang dibutuhkan
+
+Berikut ini adalah package dan fungsi R yang akan digunakan dalam modul PCA.
+
+1. cor() dari library stats untuk menghitung korelasi matrik.
+2. eigen() dari library base untuk menghitung nilai eigen dan vektor eigen
+3. prcomp() dari library stats untuk analisa Principal Component
+4. princomp() dari library stats untuk analisa Principal Component
+5. screeplot() dari library stats untuk membuat screeplot
+6. biplot() dari library stats untuk membuat biplot.
+7. autoplot() dari package ggfortify untuk membuat biplot.
+8. fviz_pca_ind() dari package factoextra untuk membuat biplot.
+
+# Package dan Fungsi R | Fungsi prcomp() dan princomp()
+
+R menyediakan fungsi prcomp() dan princomp() untuk melakukan Principal Component Analysis.
+
+prcomp(x, center = TRUE, scale. = FALSE) 
+
+Deskripsi
+
+- Argumen x adalah dataframe berisi variabel numerik atau matrik.
+- R secara otomatis akan melakukan standarisasi data bila argumen center = TRUE dan scale = TRUE diaktifkan.
+- Output stdev adalah akar dari nilai eigen.
+- Output center menghasilkan mean dari nilai-nilai suatu variabel (mean kolom dalam struktur data yang digunakan pada contoh).
+- Output scale menghasilkan standard deviation untuk nilai-nilai suatu variabel (column mean dalam struktur data) yang digunakan pada contoh).
+- Output principal component sdev menghasilkan nilai standard deviation yang digunakan untuk menghitung kontribusi suatu principal component terhadap variabilitas data.
+- Output rotation menampilkan loading Principal Component yang akan digunakan untuk menghitung skor data pada sistem koordinat baru. Koefisien-koefisien pada vektor-vektor Principal Component menunjukkan besarnya korelasi antara variabel dengan Principal Component.
+- Output x menampilkan skor data pada “sistem koordinat baru”.
+
+Daftar parameter lengkap dapat dilihat pada Help dengan mengetikkan ?prcomp pada console R.
+
+
+# Contoh
+
+Berikut ini adalah contoh dataset dengan 3 variabel.
+
+## 'data.frame':   20 obs. of 3 variables:
+## $ x1: num 8.1 10.6 7.5 14.8 11 7.5 11.5 12.2 11.7 9.1 ...
+## $ x2: num 10.6 13 9.5 15.8 13.3 9.5 13.4 13.5 13.5 11.3 ...
+## $ x3: num 217.7 173.3 648.5 578.3 -44.4 ...
+
+##    x1  x2   x3
+## 1 8.1 10.6 217.7
+## 2 10.6 13.0 173.3
+## 3 7.5 9.5 648.5
+
+Output statistika deskriptif menunjukkan skala dan variabilitas x1 mirip dengan x3, mean pada skala puluhan. Variabel x3 memiliki skala yang jauh berbeda dengan 2 variabel lainnya dengan mean pada skala ratusan.
+
+##       x1             x2             x3       
+## Min.  : 3.40  Min.  : 5.40  Min.  :-264.7 
+## 1st Qu.: 8.85  1st Qu.:11.12  1st Qu.: 85.8 
+## Median :11.10  Median :13.20  Median : 357.2 
+## Mean  :10.58  Mean  :12.59  Mean  : 369.4 
+## 3rd Qu.:12.28  3rd Qu.:14.32  3rd Qu.: 600.8 
+## Max.  :14.80  Max.  :17.20  Max.  :1290.2
+
+Demikian pula dengan skala simpangan baku (standard deviation) untuk variabel x1, x2 dan x3.
+
+##        x1        x2        x3 
+##  2.736998  2.676462 404.869508
+
+
+# Contoh | Langkah 1: Standarisasi Data
+Output statistika deskriptif menunjukkan skala variabel x3 yang berbeda dari kedua variabel lainnya. Agar PCA dapat bekerja optimal, data ini akan distandarisasi dengan menggunakan fungsi scale() pada R.
+Dalam contoh ini, Anda hanya perlu run dan submit code di bawah ini.
+
+```{r}
+
+library(openxlsx)
+df <- read.xlsx("raw_data/dqlab_pcadata.xlsx", sheet="3varb")
+
+df <- scale(df, center = TRUE, scale = TRUE)
+head(df, 3)
+
+```
+
+# Contoh | Langkah 2: Menghitung Matrik Korelasi Data
+Pada dataset ini variabel x1 dan x2 memiliki korelasi linier yang erat (r12 = 0.987) sedangkan pasangan variabel x2 dan x3 dan pasangan x1 dan x3 tidak memiliki korelasi yang sekuat pasangan x1 dan x2 (r13 = 0.299, r23 = 0.258). Scatter plot juga memberikan kesimpulan serupa.
+```{r, echo=FALSE}
+knitr::include_graphics("download_pca7.png")
+```
+
+```{r}
+df <- read.xlsx("raw_data/dqlab_pcadata.xlsx", sheet="3varb")
+df <- scale(df, center = TRUE, scale = TRUE)
+
+cormat <- cor(df)
+cormat
+```
+
+# Contoh | Langkah 3: Menghitung Nilai Eigen dan Vektor Eigen
+Setiap nilai eigen memiliki pasangan vektor eigen. Pada output di atas vektor eigen untuk nilai eigen pertama adalah kolom pertama pada vektor eigen dan seterusnya. Pada contoh dataset dengan 3 variabel ini terdapat 3 nilai eigen dan 3 vektor eigen.
+
+“Variabel baru” principal component PC1, PC2, dan PC3 didapatkan dari vektor eigen dan merupakan kombinasi linier dari variabel lama x1, x2 dan x3. Koefisien-koefisien tersebut menunjukkan kontribusi variabel-variabel lama dalam masing-masing principal komponen.
+```{r, echo=FALSE}
+knitr::include_graphics("download_pca8.png")
+```
+
+```{r}
+df <- read.xlsx("raw_data/dqlab_pcadata.xlsx", sheet="3varb")
+df <- scale(df, center = TRUE, scale = TRUE)
+
+cormat <- cor(df)
+
+eig <- eigen(cormat)
+eig
+```
+# Contoh | Langkah 4: Memilih Banyaknya Principal Component
+Untuk contoh soal ini, kontribusi PC1, PC2 dan PC3 terhadap variabilitas data adalah
+
+*round(eig$values/ncol(df),3)*
+
+Kontribusi kumulatif PC1, PC2 dan PC3 adalah
+
+*round(cumsum(eig$values/ncol(df)),3)*
+
+Dengan menggunakan batasan 80%, maka hanya 2 principal component yang diperlukan untuk menjelaskan 99% variabilitas data, yaitu PC1 dan PC2.
+
+*pr.out <- prcomp(df, scale. = TRUE, center = TRUE)*
+*summary(pr.out)*
+
+Screeplot dapat digunakan sebagai alat bantu untuk memilih banyaknya PC. Banyaknya principal component yang akan dipilih adalah angka pada elbow Screeplot. Banyaknya PC(p) yang dipilih adalah pada saat terjadi penurunan varians yang tajam sebelum penurunan varians melandai. Pada contoh ini banyaknya PC yang dipilih adalah 2. Bila kita menggunakan kriterion Kaiser pada scree plot, maka banyaknya PC yang dipilih adalah 1.
+
+*library(factoextra)*
+*fviz_eig(pr.out, addlabels = TRUE)*
+
+```{r}
+knitr::include_graphics("download_screeplot.png")
+```
+*screeplot(pr.out, type = "line")*
+*abline(h = 1, lty = 3, col = "red")*
+
+```{r}
+knitr::include_graphics("download_screeplot2.png")
+```
+```{r}
+library(openxlsx)
+df <- read.xlsx("raw_data/dqlab_pcadata.xlsx", sheet="3varb")
+df <- scale(df, center = TRUE, scale = TRUE)
+cormat <- cor(df)
+eig <- eigen(cormat)
+
+round(eig$values/ncol(df),3)
+round(cumsum(eig$values/ncol(df)),3)
+
+pr.out <- prcomp(df, scale. = TRUE, center = TRUE)
+pr.out
+summary(pr.out)
+
+library(factoextra)
+
+fviz_eig(pr.out, addlabels = TRUE)
+
+screeplot(pr.out, type = "line")
+abline(h = 1, lty = 3, col = "red")
+```
+
+# Contoh | Langkah 5: Visualisasi dengan Biplot
+Hasil output **rotation** menunjukkan bobot kontribusi masing-masing variabel terhadap masing-masing Principal Component.
+
+*pr.out$rotation*
+
+##          PC1        PC2         PC3
+## x1 0.6704698 -0.2112281 -0.71123334
+## x2 0.6640498 -0.2567210  0.70223374
+## x3 0.3309200  0.9431209  0.03185768
+
+
+*biplot(pr.out, scale = 0)*
+
+```{r}
+knitr::include_graphics("download_biplot.png")
+```
+Pada biplot di atas variabel x1 dan x2 memiliki kontribusi yang besar terhadap PC1 (arah mendatar) dan variabel x3 memiliki kontribusi yang besar terhadap PC2 (arah vertikal).
+
+```{r}
+library(openxlsx)
+df <- read.xlsx("raw_data/dqlab_pcadata.xlsx", sheet="3varb")
+df <- scale(df, center = TRUE, scale = TRUE)
+
+pr.out <- prcomp(df, scale. = TRUE, center = TRUE)
+
+pr.out$rotation
+biplot(pr.out, scale = 0)
+```
+
+# Contoh | Langkah 6: Menghitung Skor Baru
+
+Kita telah berhasil mereduksi dimensi variabel-variabel prediktor dari 3 variabel menjadi 2 variabel dengan menggunakan Principal Component Analysis. Skor variabel lama akan ditransformasi menjadi skor variabel baru dengan menggunakan rumus
+
+```{r}
+knitr::include_graphics("download_func.png")
+```
+
+
+Bila observasi dengan 3 variabel memiliki nilai
+
+head(df)
+##               x1        x2        x3
+## [1,] -0.906102243 -0.7416508 -0.3747010
+## [2,] 0.007307276 0.1550555 -0.4843659
+## [3,] -1.125320527 -1.1526412 0.6893456
+## [4,] 1.541835268 1.2012128 0.5159564
+## [5,] 0.153452799 0.2671437 -1.0220701
+## [6,] -1.125320527 -1.1526412 -1.0450404
+
+maka nilai observasi ini dalam “sistem koordinat” yang baru dengan 2 PC adalah
+
+df_new <- df %*% pr.out$rotation
+df_new[1:6,1:2]
+##             PC1        PC2
+## [1,] -1.22400335 0.02840327
+## [2,] -0.05242254 -0.49816513
+## [3,] -1.29178635 1.18374272
+## [4,] 2.00215943 -0.14744625
+## [5,] -0.05794123 -1.06493057
+## [6,] -1.86572942 -0.45199295
+
+
+Fungsi prcomp() secara otomatis menghitung skor .
+
+##             PC1        PC2        PC3
+## [1,] -1.22400335 0.02840327 0.11170080
+## [2,] -0.05242254 -0.49816513 0.08825722
+## [3,] -1.29178635 1.18374272 0.01290291
+## [4,] 2.00215943 -0.14744625 -0.23663535
+## [5,] -0.05794123 -1.06493057 0.04589582
+## [6,] -1.86572942 -0.45199295 -0.04235061
+
+```{r}
+library(openxlsx)
+df <- read.xlsx("raw_data/dqlab_pcadata.xlsx", sheet="3varb")
+df <- scale(df, center = TRUE, scale = TRUE)
+pr.out <- prcomp(df, scale. = TRUE, center = TRUE)
+
+head(df)
+df_new <- df %*% pr.out$rotation
+df_new[1:6,1:2]
+df_new
+```
+
+# Tugas Praktek
+
+```{r}
+#Panggil library openxlsx untuk membaca file data Excel
+library(openxlsx)
+
+#Baca data pada sheet "3varb" dalam file https://storage.googleapis.com/dqlab-dataset/dqlab_pcadata.xlsx
+#dan simpan data dengan nama df_raw
+df_raw <- read.xlsx("raw_data/dqlab_pcadata.xlsx", sheet = "3varb")
+
+#Tampilkan struktur data 
+str(df_raw)
+
+#Tampilkan beberapa baris observasi dengan fungsi head()
+head(df_raw)
+
+#Lakukan analisa PCA dengan fungsi prcomp() 
+#simpan output dengan nama pr.out
+pr.out <- prcomp(df_raw, center = TRUE, scale = TRUE, retx = TRUE)
+
+#Tampilkan komponen output fungsi prcomp()
+names(pr.out)
+
+#Tampilkan output PCA
+pr.out
+
+#Tampilkan summary dari output PCA
+summary(pr.out)
+
+#Gambarkan scree plot 
+#Tambahkan garis horizontal sebagai panduan untuk menggunakan kriteria Kaiser
+screeplot(pr.out, type = "line")
+abline(h = 1, col = "red", lty = 3)
+
+#Gambarkan biplot dengan menggunakan fungsi biplot()
+biplot(pr.out, scale = 0)
+```
+
+# Studi Kasus: 4 Variabel
+Pada bagian ini kita akan menggunakan data credit rating untuk berlatih menggunakan metode PCA. Kita akan mereduksi data set dengan 4 variabel numerik prediktor menjadi 2 Principal Component.
+
+## 'data.frame':   900 obs. of 6 variables:
+## $ contractcode: chr "AGR-000001" "AGR-000011" "AGR-000030" "AGR-000043" ...
+## $ income     : num 295 271 159 210 165 220 70 88 163 100 ...
+## $ tenor      : num 48 36 12 12 36 24 36 48 48 36 ...
+## $ dependents : num 5 5 0 3 0 5 3 3 5 6 ...
+## $ midoverdue : num 75.5 75.5 0 53 38 15 38 38 38 38 ...
+## $ riskrating : num 4 4 1 3 2 1 2 2 2 2 ...
+
+Deskripsi variabel dalam dataset credit rating ini adalah sebagai berikut:
+
+- contractcode: nomor kontrak
+- income: penghasilan per tahun dalam jutaan rupiah.
+- tenor : durasi pinjaman
+- dependents: banyaknya tanggungan. * midoverdue: rata-rata keterlambatan pembayaran pinjaman dalam hari.
+- risk rating: rating resiko
+
+Variabel respons pada dataset ini adalah risk rating. Variabel-variabel lain adalah variabel prediktor.
+
+Variabel yang akan digunakan untuk analisa PCA adalah variabel prediktor dengan tipe data numerik, yaitu
+
+## [1] "income"    "tenor"     "dependents" "midoverdue"
+
+Langkah-langkah yang akan dilakukan adalah:
+
+1. Melakukan eksplorasi data dengan teknik statistika deskriptif.
+2. Membagi dataset menjadi training set dan testing set.
+3. Menerapkan Principal Component Analysis.
+3. Memilih banyaknya principal component.
+4. Visualisasi output.
+
+## Statistika Deskriptif
+
+Sebelum melakukan reduksi dimensi dengan PCA, terlebih dahulu kita melakukan eksplorasi data dengan teknik statistika deskriptif.
+
+##     income         tenor       dependents     midoverdue  
+## Min.  : 70.0  Min.  :12.0  Min.  :0.000  Min.  :15.00 
+## 1st Qu.:120.0  1st Qu.:12.0  1st Qu.:1.000  1st Qu.:15.00 
+## Median :162.0  Median :24.0  Median :3.000  Median :53.00 
+## Mean  :162.4  Mean  :29.8  Mean  :2.929  Mean  :48.08 
+## 3rd Qu.:197.0  3rd Qu.:48.0  3rd Qu.:5.000  3rd Qu.:53.00 
+## Max.  :299.0  Max.  :48.0  Max.  :6.000  Max.  :91.00
+
+```{r}
+knitr::include_graphics("download_boxplot.png")
+```
+Dari boxplot distribusi income berdasarkan dependents dapat disimpulkan bahwa tidak terdapat perbedaan besar pada median dan sebaran penghasilan individu-individu tidak memiliki tanggungan sampai dengan yang memiliki 4 tanggungan. Median dan sebaran penghasilan kelompok dengan 5 dan 6 dependen lebih besar dibandingkan dengan 5 kelompok sebelumnya.
+
+Matriks korelasi memberikan informasi kekuatan hubungan linier antara variabel. Terlihat hubungan paling kuat adalah hubungan antara **dependents** dan **midoverdue** disusul oleh hubungan antara **income** dan **dependents**.
+
+##                income      tenor dependents midoverdue
+## income     1.00000000 -0.04649806 0.25180228 0.1599918
+## tenor     -0.04649806 1.00000000 0.00526126 0.2100942
+## dependents 0.25180228 0.00526126 1.00000000 0.7615983
+## midoverdue 0.15999175 0.21009415 0.76159830 1.0000000
+
+
+```{r}
+knitr:: include_graphics("download_corr.png")
+```
+## Split Dataset
+Dataset yang akan digunakan untuk training dan testing perlu dipisahkan agar informasi yang digunakan untuk testing tidak “bocor” ke dataset yang digunakan untuk training. Sebanyak 80% data akan digunakan untuk training, sisanya dialokasikan untuk testing.
+Teknik sampling yang akan digunakan adalah **stratified sampling** dengan menggunakan risk rating sebagai stratum. Alasan menggunakan stratified sampling adalah agar risk rating yang berbeda-beda bisa terwakili dalam dataset training dan mencegah kemungkinan memperoleh PCA yang dihasilkan dari training dataset yang hanya mengandung risk rating tertentu.
+Proporsi untuk setiap risk rating pada training set akan diterapkan untuk testing set. PCA akan diterapkan pada training dataset.
+
+## PCA dengan prcomp()
+
+## Standard deviations (1, .., p=4):
+## [1] 1.3709060 1.0347230 0.9176641 0.4559141
+## 
+## Rotation (n x k) = (4 x 4):
+##                  PC1       PC2       PC3        PC4
+## income    -0.3038356 -0.5337512 -0.7861956 0.06848411
+## tenor     -0.1470943 0.8240099 -0.5179407 -0.17637573
+## dependents -0.6649190 -0.1002035 0.2647878 -0.69117970
+## midoverdue -0.6662807 0.1614826 0.2086176 0.69747555
+
+Dari output rotation didapatkan loading Principal Component
+
+PC1 = (-0.304)income + (-0.147)tenor + (-0.665)dependents + (-0.666)midoverdue
+
+PC2 = (-0.534)income + (0.824)tenor + (-0.1)dependents + (0.161)midoverdue
+
+PC3 = (-0.786)income + (-0.518)tenor + (0.265)dependents + (0.209)midoverdue
+
+PC4 = (0.068)income + (-0.176)tenor + (-0.691)dependents + (0.697)midoverdue
+
+di mana sebuah PC merupakan rata-rata tertimbang dari variabel income sampai dengan midoverdue. Pada PC1 terlihat variabel dependents dan midoverdue dominan sedangkan pada PC2 variabel dominan adalah income dan tenor. PC3 dan PC4 memiliki pola yang sama dengan PC1 dan PC2.
+
+## Banyaknya Principal Component
+
+```{r}
+knitr::include_graphics("download_screeplot3.png")
+```
+## Importance of components:
+##                          PC1   PC2   PC3    PC4
+## Standard deviation    1.3709 1.0347 0.9177 0.45591
+## Proportion of Variance 0.4698 0.2677 0.2105 0.05196
+## Cumulative Proportion 0.4698 0.7375 0.9480 1.00000
+
+Nilai-nilai eigen
+
+## [1] 1.8793832 1.0706518 0.8421074 0.2078577
+
+Penerapan kriterion Kaiser pada Screeplot menghasilkan 2 PC, yaitu PC1 dan PC2 yang menjelaskan sebanyak 74% variabilitas dalam data. Hal ini juga konsisten dengan inspeksi rotasi pada bagian sebelumnya, dimana PC3 dan PC4 merupakan pengulangan pola pada PC1 dan PC2.
+
+Pada tahap ini dataset dengan 4 variabel numerik **income, tenor, dependents dan midoverdue** telah berhasil direduksi menjadi 2 “variabel” **PC1** dan **PC2**.
+
+## Visualisasi Output
+
+Pada biplot terlihat variabel dependents dan midoverdue memberikan paling banyak kontribusi pada arah PC1. Variabel income dan tenor berkontribusi pada arah PC1.PC2 dapat diberi nama “Beban” dan PC2 dapat diberi nama “Kemampuan Membayar”.
+
+```{r}
+knitr::include_graphics("download_biplot2.png")
+
+```
+```{r}
+knitr::include_graphics("download_biplot3.png")
+```
+Sudut antara 2 vektor variabel menunjukkan kekuatan hubungan 2 variabel. Sudut lancip di antara midoverdue dan dependents menunjukkan korelasi yang kuat sedangkan sudut tumpul di antara income dan tenor menunjukkan korelasi yang lemah.
+
+##                income      tenor dependents midoverdue
+## income     1.00000000 -0.04649806 0.25180228 0.1599918
+## tenor     -0.04649806 1.00000000 0.00526126 0.2100942
+## dependents 0.25180228 0.00526126 1.00000000 0.7615983
+## midoverdue 0.15999175 0.21009415 0.76159830 1.0000000
+
+
+# Tugas Praktik: 4 Variabel
+
+## Contoh
+Pada bagian ini kita akan melakukan Principal Component Analysis untuk 4 variabel prediktor numerik dalam data credit rating. Tahap-tahap yang akan dilakukan adalah:
+
+1. Membaca data
+2. Menampilkan statistika deskriptif
+3. Memisahkan data ke dalam training set dan testing set
+4. Memanggil fungsi untuk PCA
+5. Visualisasi output.
+
+## Input Data
+Data akan dibaca dengan menggunakan package openxlsx.
+
+library(openxlsx)
+
+Untuk membaca data dan menyimpannya ke dalam obyek dataframe, gunakan fungsi R read.xlsx(). Data dari file dqlab_pcadata.xlsx, sheet cs4varb akan disimpan ke dalam data frame bernama dat_raw.
+
+#nama_dataframe <- read.xlsx("nama_Excelfile.xlsx", sheet = "nama_sheet")
+dat_raw <- read.xlsx(xlsxFile = "dqlab_pcadata.xlsx", sheet = "cs4varb")
+
+Untuk melihat struktur data frame dan tipe variabel, gunakan fungsi str(). Untuk menampilkan beberapa baris pertama dari data frame, gunakan fungsi head().
+
+str(dat_raw)
+## 'data.frame':   900 obs. of 6 variables:
+## $ contractcode: chr "AGR-000001" "AGR-000011" "AGR-000030" "AGR-000043" ...
+## $ income     : num 295 271 159 210 165 220 70 88 163 100 ...
+## $ dependents : num 5 5 0 3 0 5 3 3 5 6 ...
+## $ asset      : num 893 906 552 791 593 ...
+## $ debt       : num 4.6984 4.0639 0.05 0.7214 0.0667 ...
+## $ riskrating : num 4 4 1 3 2 1 2 2 2 2 ...
+
+head(dat_raw)
+##  contractcode income dependents   asset      debt riskrating
+## 1  AGR-000001   295         5 892.9266 4.69837074         4
+## 2  AGR-000011   271         5 905.8225 4.06385168         4
+## 3  AGR-000030   159         0 551.7261 0.05000000         1
+## 4  AGR-000043   210         3 791.1124 0.72138396         3
+## 5  AGR-000049   165         0 592.6501 0.06666667         2
+## 6  AGR-000063   220         5 778.0493 2.59791099         1
+
+## Statistika Deskriptif
+Menampilkan statistika deskriptif 5 number summary dapat dilakukan dengan fungsi summary() dan fungsi apply().
+
+dat_raw <- subset(dat_raw, select = -contractcode)
+summary(dat_raw)
+
+##     income       dependents       asset            debt       
+## Min.  : 70.0  Min.  :0.000  Min.  : 232.2  Min.  : 0.0500 
+## 1st Qu.:121.0  1st Qu.:1.000  1st Qu.: 440.0  1st Qu.: 0.6469 
+## Median :162.0  Median :3.000  Median : 555.0  Median : 2.0253 
+## Mean  :163.3  Mean  :2.932  Mean  : 571.0  Mean  : 3.8091 
+## 3rd Qu.:199.0  3rd Qu.:5.000  3rd Qu.: 687.8  3rd Qu.: 5.1902 
+## Max.  :300.0  Max.  :6.000  Max.  :1192.3  Max.  :23.5382 
+##   riskrating  
+## Min.  :1.000 
+## 1st Qu.:1.000 
+## Median :3.000 
+## Mean  :2.681 
+## 3rd Qu.:3.000 
+## Max.  :5.000
+
+apply(dat_raw,2,FUN=sd)
+##    income dependents     asset      debt riskrating 
+## 51.863210  2.007457 174.247686  4.565370  1.294928
+
+Boxplot debt vs dependents bisa digambarkan dengan geom_boxplot dari package ggplot2. Grafik ini digunakan untuk membandingkan rata-rata hutang untuk
+
+library(ggplot2)
+ggplot(dat_raw, aes(as.factor(dependents), debt)) + geom_boxplot()
+
+```{r}
+knitr::include_graphics("download_boxplot2.png")
+```
+## Split Data: Training Set dan Testing Set
+Data akan dipisahkan menjadi 2 bagian: training dan testing set. Agar training dan testing set mendapatkan data dengan semua risk rating, sampling akan dilakukan dengan metode stratified sampling. Sebesar 80% data dari tiap-tiap risk rating akan dialokasikan untuk training set, sisanya dialokasikan untuk testing set.
+Untuk mencari index baris yang memiliki risk rating 1, 2 dan seterusnya, gunakan fungsi which().
+
+index1 <- which(dat_raw$riskrating == 1)
+index2 <- which(dat_raw$riskrating == 2)
+index3 <- which(dat_raw$riskrating == 3)
+index4 <- which(dat_raw$riskrating == 4)
+index5 <- which(dat_raw$riskrating == 5)
+
+Banyaknya data untuk tiap-tiap risk rating yang dialokasikan untuk training set dihitung dengan perintah berikut ini.
+
+train_pct <- 0.8
+ntrain1 <- round(train_pct * length(index1))
+ntrain2 <- round(train_pct * length(index2))
+ntrain3 <- round(train_pct * length(index3))
+ntrain4 <- round(train_pct * length(index4))
+ntrain5 <- round(train_pct * length(index5))
+
+
+Tentukan seed agar sampling bisa direplikasi dengan set.seed(). Ambillah sampel data tiap-tiap risk rating untuk dialokasikan ke dalam training set.
+
+set.seed(200)
+train1_index <- sample(index1, ntrain1)
+train2_index <- sample(index2, ntrain2)
+train3_index <- sample(index3, ntrain3)
+train4_index <- sample(index4, ntrain4)
+train5_index <- sample(index5, ntrain5)
+
+
+Gunakan fungsi setdiff() untuk mengalokasikan data untuk testing set. Indeks baris yang dipilih adalah indeks baris yang tidak diambil dalam proses sampling untuk training set.
+
+test1_index <- setdiff(index1, train1_index)
+test2_index <- setdiff(index2, train2_index)
+test3_index <- setdiff(index1, train3_index)
+test4_index <- setdiff(index1, train4_index)
+test5_index <- setdiff(index1, train5_index)
+
+Menggabungkan hasil sampling masing-masing rating ke dalam training set.
+
+csdat_train <- do.call("rbind", list(dat_raw[train1_index,],
+dat_raw[train2_index,], dat_raw[train3_index,],
+dat_raw[train4_index,], dat_raw[train5_index,]))
+cs_train <- subset(csdat_train, select = -riskrating)
+
+
+Hal yang sama perlu dilakukan untuk testing set.
+
+csdat_test <- do.call("rbind", list(dat_raw[test1_index,],
+dat_raw[test2_index,], dat_raw[test3_index,],
+dat_raw[test4_index,], dat_raw[test5_index,]))
+cs_test <- subset(csdat_test, select = -riskrating)
+
+## PCA
+Sebelum melakukan PCA, terlebih dahulu kita meneliti korelasi antar variabel dalam data.
+
+cor(cstrain)
+##                income      tenor dependents midoverdue
+## income     1.00000000 -0.04649806 0.25180228 0.1599918
+## tenor     -0.04649806 1.00000000 0.00526126 0.2100942
+## dependents 0.25180228 0.00526126 1.00000000 0.7615983
+## midoverdue 0.15999175 0.21009415 0.76159830 1.0000000
+
+Melakukan analisa PCA dengan fungsi prcomp() dan menampilkan output PCA dengan memanggil obyek pr.out.
+
+pr.out <- prcomp(cs_train, scale = TRUE, center = TRUE)
+pr.out
+## Standard deviations (1, .., p=4):
+## [1] 1.4793018 1.1807344 0.5432055 0.3499434
+## 
+## Rotation (n x k) = (4 x 4):
+##                  PC1       PC2        PC3        PC4
+## income    -0.5629416 0.4185777 -0.01723657 -0.71245519
+## dependents -0.4691085 -0.5133011 -0.71344421 0.08635160
+## asset     -0.5430234 0.4575271 0.11201423 0.69515997
+## debt      -0.4100727 -0.5932822 0.69148613 -0.04127494
+
+summary(pr.out)
+## Importance of components:
+##                          PC1   PC2    PC3    PC4
+## Standard deviation    1.4793 1.1807 0.54321 0.34994
+## Proportion of Variance 0.5471 0.3485 0.07377 0.03062
+## Cumulative Proportion 0.5471 0.8956 0.96938 1.00000
+
+## Visualisasi Ouput
+Screeplot digambarkan dengan fungsi screeplot(). Garis horizontal untuk panduan penerapan kriterion Kaiser digambarkan dengan abline.
+
+screeplot(pr.out, type = "line", ylim = c(0,2))
+abline(h = 1, lty = 3, col = "red")
+
+```{r}
+knitr::include_graphics("download_screeplot4.png")
+```
+Fungsi biplot() digunakan untuk membuat biplot. Biplot menggambarkan variabel, data dalam sistem koordinat dengan sumbu yang dibentuk oleh 2 Principal Component yang pertama. Opsi scale = 0 membuat panjang vektor menunjukkan besarnya kontribusi variabel dalam Principal Component.
+
+biplot(pr.out, scale = 0)
+
+```{r}
+knitr::include_graphics("download_biplot4.png")
+```
+Grafik biplot dari default package **stat** seringkali sulit dibaca bila data berukuran besar. Fungsi lain yang dapat digunakan adalah autoplot dari **ggfortify** atau fviz_pca_biplot dari **factoextra**.
+
+library(ggfortify)
+autoplot(pr.out, data = csdat_train, loadings = TRUE, loadings.label = TRUE, scale = 0)
+
+library(factoextra)
+fviz_pca_biplot(pr.out, label = "var", habillage=csdat_train$riskr
+
+```{r}
+knitr::include_graphics("download_biplot5.png")
+```
+
+```{r}
+knitr::include_graphics("download_biplot6.png")
+```
+## Soal dan dicoba
+```{r}
+#Panggil library openxlsx untuk membaca file data Excel
+#[1]
+library(openxlsx)
+
+#Baca data pada sheet "csdata" dalam file "https://storage.googleapis.com/dqlab-dataset/dqlab_pcadata.xlsx"
+#dan simpan data dengan nama "csdat_raw"
+#[2]
+csdat_raw <- read.xlsx("raw_data/dqlab_pcadata.xlsx", sheet = "csdata")
+
+#Tampilkan struktur data 
+#[3]
+str(csdat_raw)
+
+#Tampilkan beberapa baris observasi dengan fungsi head()
+#[4A]
+head(csdat_raw)
+
+#Tampilkan statistika deskriptif untuk semua variabel dalam data.
+#[4B]
+summary(csdat_raw)
+
+#Gambarkan distribusi Income berdasarkan Dependents
+library(ggplot2)
+ggplot(csdat_raw, aes(as.factor(dependents), income)) + 
+   geom_boxplot() + xlab("Dependents") + ggtitle("Boxplot Income Berdasarkan Dependents")
+
+#Pisahkan data untuk traning set dan testing set 
+#untuk tiap-tiap risk rating
+#[5]
+
+#Catat indeks/ nomor baris untuk tiap-tiap risk rating
+index1 <- which(csdat_raw$riskrating == 1)
+index2 <- which(csdat_raw$riskrating == 2)
+
+#Lakukan pencatatan indeks untuk risk rating berikutnya
+#[6]
+index3 <- which(csdat_raw$riskrating == 3)
+index4 <- which(csdat_raw$riskrating == 4)
+index5 <- which(csdat_raw$riskrating == 5)
+
+#80% data akan digunakan sebagai traning set.
+#Ulangi langkah sampai dengan index5
+#[7]
+ntrain1 <- round(0.8 * length(index1))
+ntrain2 <- round(0.8 * length(index2))
+ntrain3 <- round(0.8 * length(index3))
+ntrain4 <- round(0.8 * length(index4))
+ntrain5 <- round(0.8 * length(index5))
+
+#set seed agar sampling ini bisa direproduksi
+set.seed(100)
+
+#sampling data masing-masing rating untuk training set
+#Ulangi langkah sampai dengan train5_index
+#[8]
+train1_index <- sample(index1, ntrain1)
+train2_index <- sample(index2, ntrain2)
+train3_index <- sample(index3, ntrain3)
+train4_index <- sample(index4, ntrain4)
+train5_index <- sample(index5, ntrain5)
+
+#menyimpan data ke dalam testing set
+#Ulangi langkah sampai dengan test5_index
+#[9]
+test1_index <- setdiff(index1, train1_index)
+test2_index <- setdiff(index2, train2_index)
+test3_index <- setdiff(index3, train3_index)
+test4_index <- setdiff(index4, train4_index)
+test5_index <- setdiff(index5, train5_index)
+
+#Menggabungkan hasil sampling masing-masing risk rating ke dalam training set
+csdattrain <- do.call("rbind", list(csdat_raw[train1_index,],
+   csdat_raw[train2_index,], csdat_raw[train3_index,],
+   csdat_raw[train4_index,], csdat_raw[train5_index,]))
+cstrain <- subset(csdattrain, select =
+   -c(contractcode,riskrating))
+
+#Menggabungkan hasil sampling masing-masing risk rating ke dalam testing set
+csdattest <- do.call("rbind", list(csdat_raw[test1_index,],
+   csdat_raw[test2_index,], csdat_raw[test3_index,],
+   csdat_raw[test4_index,], csdat_raw[test5_index,])) #[10]
+cstest <- subset(csdattest, 
+   select = -c(contractcode,riskrating)) #[11]
+
+#Menghitung korelasi antar variabel 
+cor(cstrain)
+
+#Lakukan analisa PCA dengan fungsi prcomp() dan
+#simpan output ke dalam obyek dengan nama pr.out
+#[12]
+pr.out <- prcomp(cstrain, scale = TRUE, center = TRUE)
+
+#Tampilkan output PCA dengan memanggil obyek pr.out
+#[13]
+pr.out
+
+#Tampilkan summary dari output PCA
+#[14]
+summary(pr.out)
+
+#Gambarkan scree plot dengan menggunakan fungsi screeplot()
+#[15]
+screeplot(pr.out, type = "line", ylim = c(0,2))
+
+#Tambahkan garis horizontal sebagai panduan untuk menggunakan kriteria Kaiser
+abline(h = 1, lty = 3, col = "red")
+
+#Gambarkan biplot dengan menggunakan fungsi biplot()
+#[16]
+biplot(pr.out, scale = 0) #draw first 2 principal components
+```
+
+
+# Studi Kasus: 8 Variabel
+Pada bagian ini kita akan menggunakan data credit rating untuk berlatih menggunakan metode PCA. Kita akan mereduksi data set dengan 8 variabel numerik prediktor menjadi 2 Principal Component.
+
+## 'data.frame':   900 obs. of 10 variables:
+## $ contractcode: chr "AGR-000001" "AGR-000011" "AGR-000030" "AGR-000043" ...
+## $ income     : num 295 271 159 210 165 220 70 88 163 100 ...
+## $ tenor      : num 48 36 12 12 36 24 36 48 48 36 ...
+## $ dependents : num 5 5 0 3 0 5 3 3 5 6 ...
+## $ midoverdue : num 76 76 0 53 38 15 38 38 38 38 ...
+## $ riskrating : num 4 4 1 3 2 1 2 2 2 2 ...
+## $ age        : num 55 53 35 45 36 45 21 24 35 26 ...
+## $ empyear    : num 12 10 5 7 5 8 1 1 6 2 ...
+## $ asset      : num 893 906 552 791 593 ...
+## $ debt       : num 4.6984 4.0639 0.05 0.7214 0.0667 ...
+Deskripsi variabel dalam dataset credit rating ini adalah sebagai berikut:
+
+- contractcode: nomor kontrak
+- income: penghasilan per tahun dalam jutaan rupiah.
+- tenor : durasi pinjaman.
+- dependents: banyaknya tanggungan. * midoverdue: rata-rata keterlambatan pembayaran pinjaman dalam hari.
+- age: usia pemohon dalam tahun.
+- empyear: lama bekerja pada pekerjaan terakhir.
+- debt: besarnya pinjaman yang sudah ada dalam jutaan rupiah.
+- risk rating: rating resiko
+
+Variabel respons pada dataset ini adalah risk rating. Variabel-variabel lain adalah variabel prediktor.
+
+Variabel yang akan digunakan untuk analisa PCA adalah variabel prediktor dengan tipe data numerik, yaitu
+
+## [1] "income"    "tenor"     "dependents" "midoverdue" "age"      
+## [6] "empyear"   "asset"     "debt"
+
+Langkah-langkah yang akan dilakukan adalah:
+
+1. Eksplorasi data dengan teknik statistika deskriptif.
+2. Membagi dataset menjadi training set dan testing set.
+3. Menerapkan Principal Component Analysis.
+4. Memilih banyaknya principal component.
+5. Visualisasi output.
+
+## Statistika Deskriptif
+Sebelum melakukan reduksi dimensi dengan PCA, terlebih dahulu kita melakukan eksplorasi data dengan teknik statistika deskriptif.
+
+##     income         tenor       dependents     midoverdue  
+## Min.  : 70.0  Min.  :12.0  Min.  :0.000  Min.  :15.00 
+## 1st Qu.:120.0  1st Qu.:12.0  1st Qu.:1.000  1st Qu.:15.00 
+## Median :162.0  Median :24.0  Median :3.000  Median :53.00 
+## Mean  :162.4  Mean  :29.8  Mean  :2.929  Mean  :48.14 
+## 3rd Qu.:197.0  3rd Qu.:48.0  3rd Qu.:5.000  3rd Qu.:53.00 
+## Max.  :299.0  Max.  :48.0  Max.  :6.000  Max.  :91.00 
+##      age          empyear          asset            debt       
+## Min.  :20.00  Min.  : 0.000  Min.  : 232.2  Min.  : 0.0500 
+## 1st Qu.:29.00  1st Qu.: 3.000  1st Qu.: 444.3  1st Qu.: 0.6469 
+## Median :36.00  Median : 5.000  Median : 553.2  Median : 2.0416 
+## Mean  :35.74  Mean  : 5.108  Mean  : 568.7  Mean  : 3.7966 
+## 3rd Qu.:41.00  3rd Qu.: 7.000  3rd Qu.: 682.7  3rd Qu.: 5.1902 
+## Max.  :59.00  Max.  :13.000  Max.  :1100.3  Max.  :23.5382
+
+```{r}
+knitr::include_graphics("download_boxplot3.png")
+```
+```{r}
+knitr::include_graphics("download_boxplot4.png")
+```
+Dari boxplot income berdasarkan dependents dapat disimpulkan bahwa tidak terdapat perbedaan besar pada median dan sebaran penghasilan individu-individu tidak memiliki tanggungan sampai dengan yang memiliki 4 tanggungan. Median dan sebaran penghasilan kelompok dengan 5 dan 6 dependen lebih besar dibandingkan dengan 5 kelompok sebelumnya.
+
+Hal yang sama dapat diamati pada boxplot debt berdasarkan dependents. Median dan sebaran debt semakin besar dengan semakin banyaknya tanggungan.
+
+Matrik korelasi memberikan informasi kekuatan hubungan linier antar variable. Terlihat hubungan paling kuat adalah hubungan antara **income** versus **age**, **income** dan **empyear** disusul dengan hubungan antara **dependents** versus **midoverdue** dan **debt**.
+
+##                income      tenor dependents midoverdue       age
+## income     1.00000000 -0.04649806 0.25180228 0.1624426 0.9834652
+## tenor     -0.04649806 1.00000000 0.00526126 0.2083705 -0.0466877
+## dependents 0.25180228 0.00526126 1.00000000 0.7625827 0.2430167
+## midoverdue 0.16244264 0.20837054 0.76258273 1.0000000 0.1551441
+## age        0.98346517 -0.04668770 0.24301671 0.1551441 1.0000000
+## empyear    0.97444733 -0.04796359 0.25394067 0.1645664 0.9251052
+## asset      0.86337873 -0.04804028 0.20436953 0.1224551 0.9382740
+## debt       0.15557952 0.05837108 0.69737720 0.7000607 0.1556199
+
+##               empyear      asset      debt
+## income     0.97444733 0.86337873 0.15557952
+## tenor     -0.04796359 -0.04804028 0.05837108
+## dependents 0.25394067 0.20436953 0.69737720
+## midoverdue 0.16456638 0.12245511 0.70006065
+## age        0.92510523 0.93827403 0.15561994
+## empyear    1.00000000 0.74756395 0.15089249
+## asset      0.74756395 1.00000000 0.13877713
+## debt       0.15089249 0.13877713 1.00000000
+
+```{r}
+knitr::include_graphics("download_corr2.png")
+```
+## Split Dataset
+Dataset yang akan digunakan untuk training dan testing perlu dipisahkan agar informasi yang digunakan untuk testing tidak “bocor” ke dataset yang digunakan untuk training. Sebanyak 80% data akan digunakan untuk training, sisanya dialokasikan untuk testing.
+Teknik sampling yang akan digunakan adalah **stratified sampling** dengan menggunakan risk rating sebagai stratum. Alasan menggunakan stratified sampling adalah agar risk rating yang berbeda-beda bisa terwakili dalam dataset training dan mencegah kemungkinan memperoleh PCA yang dihasilkan dari training dataset yang hanya mengandung risk rating tertentu.
+Proporsi untuk setiap risk rating pada training set akan diterapkan untuk testing set. PCA akan diterapkan pada training dataset. 
+## PCA dengan prcomp()
+## Standard deviations (1, .., p=8):
+## [1] 1.99490861 1.48867836 0.99921838 0.57081733 0.51435251 0.45579721
+## [7] 0.08168404 0.03040859
+## 
+## Rotation (n x k) = (8 x 8):
+##                   PC1       PC2        PC3        PC4        PC5
+## income    -0.47706407 -0.1852419 -0.03775491 0.06523892 -0.22008106
+## tenor      0.01081998 0.1511663 -0.97111786 -0.04289554 -0.02097040
+## dependents -0.24696246 0.5063808 0.17722837 0.42331675 0.14590700
+## midoverdue -0.20336992 0.5550113 -0.06515053 0.33185665 0.14679694
+## age       -0.47873792 -0.1917264 -0.03983856 -0.04920586 0.09776723
+## empyear   -0.45716825 -0.1703323 -0.03007422 0.19373502 -0.57710422
+## asset     -0.43841511 -0.1890776 -0.03521731 -0.26268660 0.70389438
+## debt      -0.19885270 0.5261678 0.12695805 -0.77176371 -0.26497429
+
+##                    PC6          PC7          PC8
+## income     0.021707104 -0.5700871556 -0.5987549883
+## tenor     -0.177964730 0.0031881769 -0.0006072532
+## dependents -0.671312799 -0.0052066743 0.0020444245
+## midoverdue 0.717392848 0.0048806574 -0.0020012051
+## age        0.016433973 -0.3761733102 0.7607284732
+## empyear    0.023860374 0.6214289709 0.0612683219
+## asset     -0.007010088 0.3837436091 -0.2429438834
+## debt      -0.040687232 0.0002399125 -0.0007503969
+
+Dari output rotation didapatkan loading Principal Component
+
+PC1 = (-0.477)income + (0.011)tenor + (-0.247)dependents + (-0.203)midoverdue
+
+PC2 = (-0.185)income + (0.151)tenor + (0.506)dependents + (0.555)midoverdue
+
+PC3 = (-0.038)income + (-0.971)tenor + (0.177)dependents + (-0.065)midoverdue
+
+PC4 = (0.065)income + (-0.043)tenor + (0.423)dependents + (0.332)midoverdue
+
+dan seterusnya sampai dengan PC8. Pada PC1 terlihat variabel income, age, empyear dan asset memberikan kontribusi yang besar. Pada PC2 terlihat variabel midoverdue, dependents dan debt dominan. Pada PC3 variabel yang paling dominan adalah tenor.
+
+## Banyaknya Principal Component
+```{r}
+knitr::include_graphics("download_screeplot5.png")
+```
+## Importance of components:
+##                          PC1   PC2   PC3    PC4    PC5    PC6
+## Standard deviation    1.9949 1.4887 0.9992 0.57082 0.51435 0.45580
+## Proportion of Variance 0.4975 0.2770 0.1248 0.04073 0.03307 0.02597
+## Cumulative Proportion 0.4975 0.7745 0.8993 0.94001 0.97308 0.99905
+##                           PC7    PC8
+## Standard deviation    0.08168 0.03041
+## Proportion of Variance 0.00083 0.00012
+## Cumulative Proportion 0.99988 1.00000
+
+
+Nilai-nilai eigen
+
+## [1] 3.9796603540 2.2161632727 0.9984373775 0.3258324245 0.2645585093
+## [6] 0.2077510974 0.0066722822 0.0009246825
+
+Penerapan kriterion Kaiser pada screeplot menghasilkan 2 PC, yaitu PC1 dan PC2 yang menjelaskan sebanyak 74% variabilitas dalam data. Hal ini juga konsisten dengan inspeksi rotasi pada bagian sebelumnya, di mana PC3 dan PC4 merupakan pengulangan pola pada PC1 dan PC2.
+
+Pada tahap ini dataset dengan 8 variabel numerik
+
+## 'data.frame':   720 obs. of 8 variables:
+## $ income   : num 225 157 118 104 198 189 133 149 175 230 ...
+## $ tenor    : num 24 24 12 24 12 36 12 24 12 12 ...
+## $ dependents: num 0 0 1 6 1 2 2 0 1 0 ...
+## $ midoverdue: num 15 15 15 15 15 15 15 15 15 15 ...
+## $ age      : num 47 34 29 28 41 38 32 36 37 45 ...
+## $ empyear  : num 8 5 3 2 7 7 3 4 6 9 ...
+## $ asset    : num 841 510 433 455 693 ...
+## $ debt     : num 0.05 0.05 0.974 3.15 0.352 ...
+
+telah berhasil direduksi menjadi 2 “variabel” **PC1** dan **PC2**.
+
+## Visualisasi Output
+```{r}
+knitr::include_graphics("download_biplot7.png")
+```
+```{r}
+knitr::include_graphics("download_biplot8.png")
+```
+Pada biplot terlihat variabel income, age, empyear dan asset memberikan paling banyak kontribusi pada arah PC1. Variabel dependents, midoverdue, debt paling banyak berkontribusi pada arah PC2. PC1 dapat diberi nama “Kemampuan Membayar” dan PC2 dapat diberi nama “Beban dan Resiko”.
+
+Sudut antara 2 vektor variabel menunjukkan kekuatan hubungan 2 variabel. Sudut lancip di antara midoverdue dan dependents menunjukkan korelasi yang kuat sedangkan sudut tumpul di antara income dan tenor menunjukkan korelasi yang lemah.
+
+##                income      tenor dependents midoverdue       age
+## income     1.00000000 -0.04649806 0.25180228 0.1624426 0.9834652
+## tenor     -0.04649806 1.00000000 0.00526126 0.2083705 -0.0466877
+## dependents 0.25180228 0.00526126 1.00000000 0.7625827 0.2430167
+## midoverdue 0.16244264 0.20837054 0.76258273 1.0000000 0.1551441
+## age        0.98346517 -0.04668770 0.24301671 0.1551441 1.0000000
+## empyear    0.97444733 -0.04796359 0.25394067 0.1645664 0.9251052
+## asset      0.86337873 -0.04804028 0.20436953 0.1224551 0.9382740
+## debt       0.15557952 0.05837108 0.69737720 0.7000607 0.1556199
+
+##               empyear      asset      debt
+## income     0.97444733 0.86337873 0.15557952
+## tenor     -0.04796359 -0.04804028 0.05837108
+## dependents 0.25394067 0.20436953 0.69737720
+## midoverdue 0.16456638 0.12245511 0.70006065
+## age        0.92510523 0.93827403 0.15561994
+## empyear    1.00000000 0.74756395 0.15089249
+## asset      0.74756395 1.00000000 0.13877713
+## debt       0.15089249 0.13877713 1.00000000
+
+## "Predict" dengan Test Set
+Tujuan melakukan PCA untuk data set ini adalah untuk mereduksi dimensi agar data ini dapat digunakan sebagai input untuk algoritma lain. R menyediakan fungsi predict() untuk melakukan hal ini.
+
+predboject <- predict(pcaobject, newdata = newdataset)
+
+Yang perlu diperhatikan adalah obyek pr.out pada fungsi predict tersebut dihasilkan oleh PCA dengan menggunakan data training set sebagai input dan data set yang digunakan pada fungsi tersebut merupakan data testing set. Data pada **predobject$x** dapat disimpan untuk digunakan sebagai input algoritma lain.
+
+## Tugas dengan 8 Variabel
+
+```{r}
+#Panggil library openxlsx untuk membaca file data Excel
+library(openxlsx)
+
+#Baca data pada sheet "cslarge" dalam file "https://storage.googleapis.com/dqlab-dataset/dqlab_pcadata.xlsx"
+#dan simpan data dengan nama "cslarge_raw"
+cslarge_raw <- read.xlsx("raw_data/dqlab_pcadata.xlsx", sheet = "cslarge")
+
+#Tampilkan struktur data 
+str(cslarge_raw)
+
+#Tampilkan beberapa baris observasi dengan fungsi head()
+head(cslarge_raw)
+
+#Tampilkan statistika deskriptif untuk semua variabel dalam data frame.
+summary(cslarge_raw)
+
+#Gambarkan distribusi income berdasarkan dependents.
+library(ggplot2)
+ggplot(cslarge_raw, aes(as.factor(dependents), income)) + 
+   geom_boxplot() + xlab("Dependents") + ggtitle("Boxplot Income Berdasarkan Dependents")
+
+#Gambarkan distribusi debt berdasarkan dependents.
+ggplot(cslarge_raw, aes(as.factor(dependents), debt)) +
+   geom_boxplot() + xlab("Dependents") + ggtitle("Boxplot Debt Berdasarkan Dependents")
+
+#Pisahkan data untuk traning set dan testing set 
+#untuk tiap-tiap risk rating
+
+#Catat indeks/ nomor baris untuk tiap-tiap risk rating
+index1 <- which(cslarge_raw$riskrating == 1)
+index2 <- which(cslarge_raw$riskrating == 2)
+
+#Lakukan pencatatan indeks untuk risk rating berikutnya
+index3 <- which(cslarge_raw$riskrating == 3)
+index4 <- which(cslarge_raw$riskrating == 4)
+index5 <- which(cslarge_raw$riskrating == 5)
+
+#80% data akan digunakan sebagai traning set.
+ntrain1 <- round(0.8 * length(index1))
+ntrain2 <- round(0.8 * length(index2))
+ntrain3 <- round(0.8 * length(index3))
+ntrain4 <- round(0.8 * length(index4))
+ntrain5 <- round(0.8 * length(index5))
+
+#set seed agar sampling ini bisa direproduksi
+set.seed(100)
+
+#sampling data masing-masing rating untuk training set
+train1_index <- sample(index1, ntrain1)
+train2_index <- sample(index2, ntrain2)
+train3_index <- sample(index3, ntrain3)
+train4_index <- sample(index4, ntrain4)
+train5_index <- sample(index5, ntrain5)
+
+#menyimpan data ke dalam testing set
+test1_index <- setdiff(index1, train1_index)
+test2_index <- setdiff(index2, train2_index)
+test3_index <- setdiff(index3, train3_index)
+test4_index <- setdiff(index4, train4_index)
+test5_index <- setdiff(index5, train5_index)
+
+#Menggabungkan hasil sampling masing-masing risk rating ke dalam training set
+cslarge_train <- do.call("rbind", list(cslarge_raw[train1_index,],
+   cslarge_raw[train2_index,], cslarge_raw[train3_index,],
+   cslarge_raw[train4_index,], cslarge_raw[train5_index,]))
+cstrain <- subset(cslarge_train, select = -c(contractcode,riskrating))
+
+#Menggabungkan hasil sampling masing-masing risk rating ke dalam testing set
+cslarge_test <- do.call("rbind", list(cslarge_raw[test1_index,],
+   cslarge_raw[test2_index,], cslarge_raw[test3_index,],
+   cslarge_raw[test4_index,], cslarge_raw[test5_index,]))
+cstest <- subset(cslarge_test, select = -c(contractcode,riskrating))
+
+#Menghitung korelasi antar variabel 
+cor(cstrain)
+#Menggambarkan matrik korelasi dengan ggcorrplot
+library(ggcorrplot)
+ggcorrplot(cor(cstrain))
+
+
+#Lakukan analisa PCA dengan fungsi prcomp() dan
+#simpan output ke dalam obyek dengan nama pr.out
+pr.out <- prcomp(cstrain, scale = TRUE, center = TRUE)
+
+#Tampilkan output PCA dengan memanggil obyek pr.out
+pr.out
+
+#Tampilkan summary dari output PCA
+summary(pr.out)
+
+#Gambarkan scree plot dengan menggunakan fungsi screeplot()
+screeplot(pr.out, type = "line", ylim = c(0,2))
+
+#Tambahkan garis horizontal sebagai panduan untuk menggunakan kriteria Kaiser
+abline(h = 1, lty = 3, col = "red")
+
+#Gambarkan biplot dengan menggunakan fungsi biplot()
+biplot(pr.out, scale = 0) #draw first 2 principal components
+
+#Gambarkan Principal Component dan risk rating dengan menggunakan
+#fungsi autoplot() dari package ggfortify.
+library(ggfortify)
+autoplot(pr.out, data = cslarge_train, colour = 'riskrating', 
+   loadings = TRUE, loadings.label = TRUE, loadings.label.size = 3, scale = 0)
+
+#Gambarkan Principal Component dan risk rating dengan menggunakan
+#fungsi fviz_pca_ind() package factoextra.
+library(factoextra)
+fviz_pca_ind(pr.out, label="none", habillage=cslarge_train$riskrating)
+```
+# PCA selalu berhubungan dengan perkalian matriks
+
+# Penjumlahan dan Perkalian Matriks
+Dua buah matrik dapat **dijumlahkan** bila kedua matrik tersebut memiliki dimensi yang sama, yaitu m × n.
+Am×n + Bm×n = Cm×n
+
+```{r}
+knitr::include_graphics("download_matrix.jpg")
+```
+Dua buah matrik dapat **dikalikan** bila banyaknya baris pada matrik pertama sama dengan banyaknya kolom pada matrik kedua.
+```{r}
+knitr::include_graphics("download_matrix2.jpg")
+```
+
+#Koordinat dan Kombinasi Linier
+
+Motivasi untuk membahas konsep kombinasi linier ini datang dari kebutuhan untuk menyatakan data sebagai kombinasi linier dari principal component-principal component yang mana masing-masing principal component merupakan kombinasi linier variabel-variabel prediktor. Koordinat suatu vektordapat dituliskan sebagai kombinasi linier dari vektor-vektor yang menjadi basisnya.
+
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix3.jpg")
+```
+Koordinat vektor pada sistem koordinat ini adalah c1 = 1 dan c2 = 2.
+Koordinat vektor ini akan berubah bila basisnya berubah. 
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix4.jpg")
+```
+Koordinat vektor pada sistem koordinat baru adalah c1 = 1 dan c2 = −1.
+
+# Nilai Eigen dan Vektor Eigen
+Nilai eigen dan vektor eigen adalah pasangan λ dan yang memenuhi persamaan
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix5.jpg")
+```
+Nilai eigen dihitung dengan mencari akar polinomial karakteristik det(A − λI) = 0.
+Determinan suatu matriks (A−λI) untuk matriks bujur sangkar A3×3 dapat dihitung dengan ekspansi kofaktor Laplace.
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix6.jpg")
+```
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix7.jpg")
+```
+Vektor Eigen dihitung dengan mensubstitusikan nilai eigen ke dalam persamaan A = λ dan mencari solusi sistem persamaan linier.
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix8.jpg")
+```
+Masing-masing nilai eigen yang unik akan menghasilkan sebuah vektor eigen.
+
+# CONTOH
+Hitung nilai eigen dan cari vektor eigen dari matriks
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix9.jpg")
+```
+**Jawaban**
+Nilai eigen dari matriks A adalah determinan dari matriks (A − λI).
+
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix10.jpg")
+```
+Untuk nilai eigen λ = 2, vektor eigen 
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix11.jpg")
+```
+
+diperoleh dari solusi sistem persamaan linier (A − 2I) =
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix12.jpg")
+```
+
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix13.jpg")
+```
+
+Untuk nilai eigen λ = 1, vektor eigen  
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix14.jpg")
+```
+
+diperoleh dari solusi sistem persamaan linier (A−(−1)·I) = .
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix15.jpg")
+```
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix16.jpg")
+```
+Untuk nilai eigen λ = −1, vektor eigen 
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix17.jpg")
+```
+
+diperoleh dari solusi sistem persamaan linier (A−(−1)·I) = .
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix18.jpg")
+```
+```{r, echo=FALSE}
+knitr::include_graphics("download_matrix19.jpg")
+```
+Menghitung nilai eigen dan vektor eigen secara manual tentu akan sulit untuk matriks berdimensi besar. R memiliki fungsi eigen dari package base untuk menghitung nilai eigen dan vektor eigen. R akan secara otomatis mengurutkan nilai eigen dari yang berbesar sampai dengan yang terkecil.
+
+```{r}
+(A <- as.matrix(data.frame(c(1,0,1),c(0,1,1),c(1,1,0))))
+e <- eigen(A)
+str(e)
+e
+```
+# TUGAS PRAKTEK
+
+```{r}
+# Ketik perintah berikut ini untuk membaca help tentang matriks
+?matrix
+
+# Buatlah matriks 3 x 3 dan simpan dengan nama matriks A.
+A <- matrix(c(1, 1, 0, 0, -2, 1, 0, 0, 3), nrow = 3, ncol = 3, byrow = TRUE)
+
+# Tuliskan perintah untuk menampilkan matriks A
+A
+
+# Tuliskan perintah R untuk menghitung nilai eigen dan vektor eigen
+# dan simpanlah hasilnya dalam variable ev
+ev <- eigen(A)
+
+# Tuliskan perintah untuk melihat struktur obyek eigen
+str(ev)
+
+# Tuliskan perintah untuk melihat hasil output
+ev
+
+# Tuliskan perintah untuk mengakses nilai eigen
+ev$values
+
+# Tuliskan perintah untuk mengakses vektor eigen
+ev$vectors
+```
+
+# Keterbatasan PCA
+Dalam praktek Principal Component-Principal Component diberi nama tersendiri berdasarkan ringkasan variabel-variabel yang dominan. Hal ini memerlukan pengetahuan domain dan ada kalanya variabel-variabel yang muncul kurang sesuai dengan teori pada domain.
+
+Cara kerja PCA dalam mereduksi dimensi adalah membentuk Principal Component-Principal Component yang memberikan variabilitas data terbesar. Keterbatasan PCA adalah proses pemilihan PC hanya dilakukan dengan variabel-variabel prediktor. Oleh karena itu PCA sebaiknya bukan digunakan sebagai model namun digunakan sebagai teknik preprocessing data untuk kemudian menjadi input metode lain. Alternatif lain adalah menggunakan metode Partial Least Squares yang melibatkan variabel respons dalam reduksi dimensi.
+
+# Kesimpulan
+Anda telah mempelajari Principal Component Analysis sebagai salah satu teknik reduksi dimensi. PCA mengurangi dimensi dengan membentuk “variabel-variabel” baru yang menjelaskan sebagian besar variabilitas data. Dengan demikian visualisasi data maupun penjelasan model akan lebih mudah dilakukan.
+Langkah-langkah reduksi dimensi dengan PCA yang sudah dilakukan adalah
+
+1. Melakukan standarisasi data
+2. Menghitung matrik korelasi
+3. Menghitung nilai eigen dan vektor eigen
+4. Memilih banyaknya principal component dengan Screeplot dan kriterion Kaiser
+5. Visualisasi output
+
+Langkah 1 sampai dengan 3 dapat secara otomatis dilakukan oleh R.
